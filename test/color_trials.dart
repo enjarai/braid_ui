@@ -172,7 +172,7 @@ class AppBody extends StatefulWidget {
   WidgetState<AppBody> createState() => _AppBodyState();
 }
 
-enum Test { checkboxes, cursors, textWrapping, textInput, collapsible, grids, swapnite, dropdowns, intents }
+enum Test { checkboxes, cursors, textWrapping, textInput, collapsible, grids, swapnite, dropdowns, intents, teleportation }
 
 class _AppBodyState extends WidgetState<AppBody> {
   static final _windowEndec = structEndec<(String, WindowController)>().with2Fields(
@@ -225,6 +225,7 @@ class _AppBodyState extends WidgetState<AppBody> {
                       Test.swapnite => const SwapTest(),
                       Test.dropdowns => const DropdownTest(),
                       Test.intents => const IntentTest(),
+                      Test.teleportation => const TeleportationTest(),
                     },
                     Align(
                       key: const Key('buttons'),
@@ -867,6 +868,8 @@ class _DebugToggleState extends WidgetState<DebugToggle> {
 }
 
 class ToggleBox extends StatefulWidget {
+  const ToggleBox({super.key});
+
   @override
   WidgetState<ToggleBox> createState() => _ToggleBoxState();
 }
@@ -1102,6 +1105,62 @@ class _InnerIntentsTestState extends WidgetState<InnerIntentsTest> {
               actions: ActionsMap([CallbackAction<ClickIntent>((_, intent) => print('inner: ${intent.message}'))]),
               child: Panel(color: Color.red, child: Text('b')),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class TeleportationTest extends StatefulWidget {
+  const TeleportationTest({super.key});
+
+  @override
+  WidgetState<TeleportationTest> createState() => _TeleportationTestState();
+}
+
+class _TeleportationTestState extends WidgetState<TeleportationTest> {
+  bool teleport = false;
+  TeleportKey key = TeleportKey();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget theSubject = ToggleBox(key: key);
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Checkbox(
+            checked: teleport,
+            onClick: () => setState(() => teleport = !teleport),
+          ),
+          Padding(insets: const Insets.all(8)),
+          Sized(
+            width: 64,
+            height: 64,
+            child: Panel(
+              color: Color.red,
+              child: Padding(
+                insets: const Insets.all(8),
+                child: !teleport ? theSubject : null,
+              )
+            )
+          ),
+          Sized(
+            width: 64,
+            height: 64,
+            child: Panel(
+              color: Color.green,
+              child: Panel(
+                color: Color.blue,
+                child: Padding(
+                  insets: const Insets.all(8),
+                  child: teleport ? theSubject : null,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

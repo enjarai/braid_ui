@@ -44,6 +44,11 @@ typedef AnimationCallback = void Function(Duration delta);
 abstract interface class ProxyHost {
   void scheduleAnimationCallback(AnimationCallback callback);
   void schedulePostLayoutCallback(Callback callback);
+  void registerTeleportKey(TeleportKey key, WidgetProxy proxy);
+  void unregisterTeleportKey(TeleportKey key, WidgetProxy proxy);
+  WidgetProxy? getProxyByTeleportKey(TeleportKey key);
+
+  Set<WidgetProxy> get inactiveWidgetProxies;
 }
 
 class BuildScope {
@@ -139,6 +144,11 @@ sealed class WidgetProxy with NodeWithDepth implements BuildContext, Comparable<
     depth = parent.depth + 1;
     _slot = slot;
     _host = parent._host;
+
+    final Key? key = widget.key;
+    if (key is TeleportKey) {
+      _host!.registerTeleportKey(key, this);
+    }
   }
 
   void reattach(WidgetProxy newParent, Object? newSlot) {
@@ -169,7 +179,15 @@ sealed class WidgetProxy with NodeWithDepth implements BuildContext, Comparable<
       _dependencies = null;
     }
 
-    visitChildren(_detachChild);
+    _host!.inactiveWidgetProxies.add(this);
+
+    // _inheritedProxies = null;
+
+    _parent = null;
+    // _parentBuildScope = null;
+    _slot = null;
+
+    visitChildren((c) => c._slot = null);
   }
 
   @mustCallSuper
@@ -191,7 +209,15 @@ sealed class WidgetProxy with NodeWithDepth implements BuildContext, Comparable<
       }
     }
 
+    final Key? key = _widget.key;
+    if (key is TeleportKey) {
+      host!.unregisterTeleportKey(key, this);
+    }
+
     visitChildren(_unmountChild);
+  }
+
+  void forgetChild(WidgetProxy child) {
   }
 
   bool needsRebuild = true;
@@ -212,7 +238,7 @@ sealed class WidgetProxy with NodeWithDepth implements BuildContext, Comparable<
 
   WidgetProxy? refreshChild(WidgetProxy? child, Widget? newWidget, Object? newSlot) {
     if (newWidget == null) {
-      if (child != null) child.unmount();
+      if (child != null) child.detach();
       return null;
     }
 
@@ -228,11 +254,50 @@ sealed class WidgetProxy with NodeWithDepth implements BuildContext, Comparable<
       return child;
     } else {
       if (child != null) {
-        child.unmount();
+        child.detach();
       }
 
-      return newWidget.proxy()..mount(this, newSlot);
+      return inflateWidget(newWidget, newSlot);
     }
+  }
+
+  WidgetProxy inflateWidget(Widget newWidget, Object? newSlot) {
+    final Key? key = newWidget.key;
+    final WidgetProxy? inactiveChild = key is TeleportKey
+        ? _retakeInactiveProxy(key, newWidget)
+        : null;
+
+    final WidgetProxy newChild = inactiveChild ?? newWidget.proxy();
+
+    if (inactiveChild != null) {
+      inactiveChild.reattach(this, newSlot);
+      final WidgetProxy? updatedChild = refreshChild(inactiveChild, newWidget, newSlot);
+
+      return updatedChild!;
+    } else {
+      newChild.mount(this, newSlot);
+
+      return newChild;
+    }
+  }
+
+  WidgetProxy? _retakeInactiveProxy(TeleportKey key, Widget newWidget) {
+    final WidgetProxy? proxy = host!.getProxyByTeleportKey(key);
+    if (proxy == null) {
+      return null;
+    }
+
+    if (!Widget.canUpdate(proxy.widget, newWidget)) {
+      return null;
+    }
+
+    final WidgetProxy? parent = proxy._parent;
+    if (parent != null) {
+      proxy.detach();
+    }
+    
+    host!.inactiveWidgetProxies.remove(proxy);
+    return proxy;
   }
 
   /// Update the configuration of this proxy, called by the framework when
@@ -311,6 +376,13 @@ mixin SingleChildWidgetProxy on WidgetProxy {
       visitor(child!);
     }
   }
+
+  @override
+  void forgetChild(WidgetProxy child) {
+    if (this.child == child) {
+      this.child = null;
+    }
+  } 
 }
 
 /// The opposite of an [InstanceWidgetProxy] - that is, a composed
@@ -703,7 +775,7 @@ class MultiChildInstanceWidgetProxy extends InstanceWidgetProxy {
         if (key != null) {
           keyedOldChildren[key] = oldChild;
         } else {
-          oldChild.unmount();
+          oldChild.detach();
         }
 
         oldChildrenTop++;
@@ -753,7 +825,7 @@ class MultiChildInstanceWidgetProxy extends InstanceWidgetProxy {
     // dispose keyed proxies that were not reused
     if (hasOldChildren && keyedOldChildren!.isNotEmpty) {
       for (final proxy in keyedOldChildren.values) {
-        proxy.unmount();
+        proxy.detach();
       }
     }
 

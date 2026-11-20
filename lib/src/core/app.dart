@@ -279,6 +279,8 @@ class AppState implements InstanceHost, ProxyHost {
   final BuildScope _rootBuildScope = BuildScope();
   Queue<AnimationCallback> _animationCallbacks = DoubleLinkedQueue();
   Queue<Callback> _postLayoutCallbacks = DoubleLinkedQueue();
+  final Map<TeleportKey, WidgetProxy> _teleportKeyRegistry = <TeleportKey, WidgetProxy>{};
+  final Set<WidgetProxy> _inactiveWidgetProxies = HashSet();
   late _RootProxy _root;
 
   ({double x, double y}) _cursorPosition = const (x: 0, y: 0);
@@ -446,6 +448,14 @@ class AppState implements InstanceHost, ProxyHost {
     if (anyTreeMutations) {
       _inspector?.refresh();
     }
+
+    final List<WidgetProxy> proxies = _inactiveWidgetProxies.toList()..sort();
+    for (WidgetProxy proxy in proxies) {
+      if (proxy.lifecycle == .detached) {
+        proxy.unmount();
+      }
+    }
+    _inactiveWidgetProxies.clear();
 
     if (_postLayoutCallbacks.isNotEmpty) {
       final callbacksForThisFrame = _postLayoutCallbacks;
@@ -719,6 +729,22 @@ node [shape="box"];
 
   @override
   void schedulePostLayoutCallback(Callback callback) => _postLayoutCallbacks.add(callback);
+
+  @override
+  void registerTeleportKey(TeleportKey key, WidgetProxy proxy) => _teleportKeyRegistry[key] = proxy;
+
+  @override
+  void unregisterTeleportKey(TeleportKey key, WidgetProxy proxy) {
+    if (_teleportKeyRegistry[key] == proxy) {
+      _teleportKeyRegistry.remove(key);
+    }
+  }
+  
+  @override
+  WidgetProxy? getProxyByTeleportKey(TeleportKey key) => _teleportKeyRegistry[key];
+
+  @override
+  Set<WidgetProxy> get inactiveWidgetProxies => _inactiveWidgetProxies;
 
   // ---
 
